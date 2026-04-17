@@ -1,0 +1,50 @@
+name: N1盒子 一键快速编译
+
+on: 
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: '需要额外加的插件（默认已经带了你要的所有功能）'
+        required: false
+        default: ''
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取预编译的N1底包镜像
+        run: |
+          docker pull kiddin9/openwrt-imagebuilder:amlogic_meson
+
+      - name: 打包你要的定制固件
+        run: |
+          # 把你之前要的所有插件都打包进去
+          DEFAULT_PACKAGES="\
+            autocore base-files bash block-mount ca-bundle coremark curl \
+            dnsmasq-full dropbear ds-lite e2fsprogs ethtool firewall4 fstools \
+            htop kmod-brcmfmac kmod-fb kmod-lib-zstd kmod-tcp-bbr kmod-usb-net-rtl8152 \
+            libc libgcc libustream-mbedtls logd \
+            luci-app-advancedplus luci-app-fan luci-app-filemanager luci-app-firewall \
+            luci-app-package-manager luci-app-syscontrol luci-app-upnp luci-app-wifihistory \
+            luci-app-wizard luci-base luci-compat luci-lib-fs luci-lib-ipkg luci-proto-wireguard \
+            mkf2fs mtd nano netifd odhcp6c odhcpd-ipv6only openssh-sftp-server opkg \
+            parted ppp ppp-mod-pppoe resolveip swconfig uci uclient-fetch \
+            urandom-seed urngd wget-ssl zram-swap automount \
+            luci-app-diskman luci-app-store luci-app-openclash luci-app-homeproxy \
+            luci-app-nikki luci-app-passwall luci-app-dockerman \
+            luci-theme-argon luci-app-argon-config ipv6helper uhttpd \
+            ${{ github.event.inputs.packages }}"
+
+          docker run --rm -v $PWD:/out kiddin9/openwrt-imagebuilder:amlogic_meson \
+            make PROFILE=phicomm_n1 \
+            PACKAGES="$DEFAULT_PACKAGES" \
+            BIN_DIR=/out
+
+      - name: 上传编译好的固件
+        uses: actions/upload-artifact@main
+        with:
+          name: N1-Kwrt-定制固件
+          path: *.img.gz
