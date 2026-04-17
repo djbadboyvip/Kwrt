@@ -1,0 +1,75 @@
+#=================================================
+# https://github.com/P3TERX/Actions-OpenWrt
+# Description: Build OpenWrt using GitHub Actions
+# Lisence: MIT
+# Author: P3TERX
+# Blog: https://p3terx.com
+#=================================================
+# N1 盒子专属编译调度器
+# 仅触发 amlogic_meson (N1) 编译，不编译其他设备
+
+name: Repo Dispatcher
+
+on: 
+  workflow_dispatch:
+    inputs:
+      param:
+        description: '自定义参数（如 clean/cw）'
+        required: false
+        default: ''
+
+env:
+  TOKEN_KIDDIN9: ${{ secrets.TOKEN_KIDDIN9 }}
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+
+    # 取消正在运行的冗余工作流
+    - name: Cancel running workflows
+      uses: styfle/cancel-workflow-action@main
+      if: contains(github.event.inputs.param, 'cw')
+      with:
+        workflow_id: all
+        access_token: ${{ secrets.TOKEN_KIDDIN9 }}
+
+    # 加载配置
+    - name: Load Settings.ini
+      run: |
+        if [ -f "${GITHUB_WORKSPACE}/devices/common/settings.ini" ]; then
+          source "${GITHUB_WORKSPACE}/devices/common/settings.ini"
+          echo "REPO_URL=${REPO_URL}" >> $GITHUB_ENV
+          echo "REPO_BRANCH=${REPO_BRANCH}" >> $GITHUB_ENV
+        fi
+
+    # 触发依赖包更新
+    - name: Trigger Packages Update
+      continue-on-error: true
+      run: |
+        gitdate=$(curl -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 }}" -s "https://api.github.com/repos/kiddin9/op-packages/actions/runs" | jq -r '.workflow_runs[0].created_at')
+        gitdate=$(date -d "$gitdate" +%s)
+        now=$(date +%s)
+        if [[ $(expr $gitdate + 120) -lt $now ]]; then
+          curl -X POST https://api.github.com/repos/kiddin9/op-packages/dispatches \
+          -H "Accept: application/vnd.github.v3+json" \
+          -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 }}" \
+          --data '{"event_type": "update"}'
+        fi
+
+    # 触发 N1 盒子编译
+    - name: Trigger N1 Box Compile
+      run: |
+        sudo timedatectl set-timezone "$TZ"
+        PARAM="${{ github.event.inputs.param }}"
+        
+        # 仅触发 N1 对应的 amlogic_meson 平台
+        target="amlogic_meson"
+        
+        curl -X POST https://api.github.com/repos/${{ github.repository }}/dispatches \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "Authorization: token ${{ secrets.TOKEN_KIDDIN9 }}" \
+        -d "{\"event_type\": \"$target $PARAM\", \"client_payload\": {\"target\": \"$target\"}}"
